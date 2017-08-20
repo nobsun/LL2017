@@ -1,51 +1,43 @@
 module Parser where
 
+import Prelude hiding ((<$>), (<*>))
+
 type Parser a = String -> [(a, String)]
 
-pUnit :: a -> Parser a
-pUnit a s = [(a, s)]
+(+++) :: Parser a -> Parser a -> Parser a
+(p +++ q) s = p s ++ q s
 
-pFail :: Parser a
-pFail s = []
+punit :: a -> Parser a
+punit a s = [(a, s)]
 
-pFmap :: (a -> b) -> (Parser a -> Parser b)
-pFmap f p s = [ (f a, t) | (a, t) <- p s ]
+pfail :: Parser a
+pfail = const []
 
-pApp :: Parser (a -> b) -> (Parser a -> Parser b)
-pApp pf pa s = [ (f a, u) | (f, t) <- pf s, (a, u) <- pa t ]
+eof :: Parser ()
+eof s = if null s then [((), s)] else []
 
-pZeroOrMore :: Parser a -> Parser [a]
-pZeroOrMore p = pUnit [] `pAlt` pOneOrMore p
+(<$>) :: (a -> b) -> (Parser a -> Parser b)
+(f <$> p) s = [ (f a, t) | (a, t) <- p s ]
 
-pOneOrMore :: Parser a -> Parser [a]
-pOneOrMore p = (:) `pFmap` p `pApp` pZeroOrMore p
+(<*>) :: Parser (a -> b) -> (Parser a -> Parser b)
+(p <*> q) s = [ (f a, u) | (f, t) <- p s, (a, u) <- q t ]
 
-pReplicate :: Int -> Parser a -> Parser [a]
-pReplicate 0 _ = pUnit []
-pReplicate n p = (:) `pFmap` p `pApp` pReplicate (n-1) p
+satisfy :: (Char -> Bool) -> Parser Char
+satisfy p (c:cs) | p c = [(c, cs)]
+satisfy p _            = []
 
-pAlt :: Parser a -> Parser a -> Parser a
-pAlt p q s = p s ++ q s
+char :: Char -> Parser Char
+char c = satisfy (c ==)
 
-pSat :: (Char -> Bool) -> Parser Char
-pSat p (c:cs) | p c = [(c, cs)]
-pSat p _            = []
+many :: Parser a -> Parser [a]
+many p = punit [] +++ many1 p
 
-pBetween :: Parser open -> Parser close -> Parser a -> Parser a
-pBetween open close p s = [ (a, v) | (_, t) <- open s
-                                   , (a, u) <- p t
-                                   , (_, v) <- close u ]
+many1 :: Parser a -> Parser [a]
+many1 p = (:) <$> p <*> many p
 
-pPair :: Parser a -> Parser b -> Parser (a, b)
-pPair p q s = [ ((a, b), u) | (a, t) <- p s, (b, u) <- q t ]
+pair :: Parser a -> Parser b -> Parser (a, b)
+pair p q = (,) <$> p <*> q
 
---
+between :: Parser open -> Parser close -> Parser a -> Parser a
+between open close p = const const <$> open <*> p <*> close
 
-newtype Parser' a = Parser' { parse :: String -> [(a, String)] }
-
-instance Functor Parser' where
-  fmap f p = Parser' (pFmap f (parse p))
-
-instance Applicative Parser' where
-  pure a  = Parser' (pUnit a)
-  p <*> q = Parser' (pApp (parse p) (parse q))
